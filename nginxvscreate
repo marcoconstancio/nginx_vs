@@ -1,0 +1,104 @@
+#!/bin/bash
+
+## BASED ON: http://www.sebdangerfield.me.uk/2011/03/automatically-creating-new-virtual-hosts-with-nginx-bash-script/
+## VERY USEFULL INFO: http://themesforge.com/performance/configuring-nginx-php5-fpm-and-user-permissions/ 
+
+
+# Current Dirs
+sed=`which sed`
+phpfpm_pool_dir=/etc/php5/fpm/pool.d
+phpfpm_pool_template=pool_template.conf
+
+# Inputed Data
+inputed_user="$1"
+inputed_pass="$2"
+inputed_domain="$3"
+
+# Mysql Settings
+mysql="/usr/bin/mysql"
+mysql_user='root'
+mysql_user_pass=''
+mysql_host='localhost'
+
+# Nginx
+nginx_template_file=site_template.conf
+nginx_sitesenable_dir=/etc/nginx/sites-enabled
+nginx_template_htmldir="\/var\/www" 
+
+# make sure we get at least 3 args, else die
+[[ $# -le 2 ]] && { echo "Usage: $0 <user> <password> <domain>"; exit 1; }
+
+# check the domain is roughly valid!
+pattern="^([[:alnum:]]([[:alnum:]\-]{0,61}[[:alnum:]])?\.)+[[:alpha:]]{2,6}$"
+if [[ "$inputed_domain" =~ $pattern ]]; then
+	inputed_domain=`echo $inputed_domain | tr '[A-Z]' '[a-z]'`
+	echo "Creating hosting for:" $inputed_domain
+else
+	echo "invalid domain name"
+	exit 1 
+fi
+ 
+#remove dots and dashes
+db_name=`echo $inputed_domain | $sed 's/\.//g' | $sed 's/\-//g'` 
+
+# build mysql queries
+mysql_createdb_query="${mysql} -u "${mysql_user}" -h "${mysql_host}" -p'${mysql_user_pass}' -e 'CREATE DATABASE ${db_name};'"
+mysql_setuserpermissions_query="${mysql} -u "${mysql_user}" -h "${mysql_host}" -p'${mysql_user_pass}' -e \"GRANT ALL ON ${db_name}.* TO ${inputed_user}@localhost IDENTIFIED BY '${inputed_pass}';\""
+
+# run mysql queries
+eval $mysql_createdb_query 2>/dev/null
+eval $mysql_setuserpermissions_query 2>/dev/null
+
+egrep "^$inputed_user" /etc/passwd >/dev/null
+if [ $? -eq 0 ]; then
+	echo "The user $inputed_user already exists!"
+	##exit 1
+else
+	pass=$(perl -e 'print crypt($ARGV[0], "password")' $inputed_pass)
+	useradd -m -p $pass $inputed_user
+fi
+
+## Creates the directories
+mkdir /home/$inputed_user/$inputed_domain 2>/dev/null
+mkdir /home/$inputed_user/$inputed_domain/{logs,public_html,backups} 2>/dev/null
+chown $inputed_user:$inputed_user /home/$inputed_user/$inputed_domain -R
+user_dir="\/home\/$inputed_user"
+
+## Create html index.html page
+echo "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">
+
+<head>
+	<title>domain.com</title>
+	<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\" />
+	<meta name=\"generator\" content=\"Geany 0.20\" />
+</head>
+
+<body>
+	This is the index page of domain.com.
+</body>
+
+</html>" > /home/$inputed_user/$inputed_domain/public_html/index.htm
+$sed -i "s/domain.com/$inputed_domain/g" /home/$inputed_user/$inputed_domain/public_html/index.htm
+
+## This will be the port of the new php-fpm process
+inputed_user_id=$(id -u $inputed_user)
+let "inputed_user_id += 9000"
+
+## Generates config for the new php-fpm process
+cp $phpfpm_pool_template $phpfpm_pool_dir/$inputed_user.conf
+$sed -i "s/www-data/$inputed_user/g" $phpfpm_pool_dir/$inputed_user.conf
+$sed -i "s/www/$inputed_user/g" $phpfpm_pool_dir/$inputed_user.conf
+$sed -i "s/9000/$inputed_user_id/g" $phpfpm_pool_dir/$inputed_user.conf	
+	
+## Generate config for ngnix
+cp $nginx_template_file $nginx_sitesenable_dir/$inputed_domain.conf
+$sed -i "s/domain.com/$inputed_domain/g" $nginx_sitesenable_dir/$inputed_domain.conf
+$sed -i "s/$nginx_template_htmldir/$user_dir/g" $nginx_sitesenable_dir/$inputed_domain.conf
+$sed -i "s/9000/$inputed_user_id/g" $nginx_sitesenable_dir/$inputed_domain.conf
+
+## Reload Services Config
+/etc/init.d/nginx reload
+/etc/init.d/php5-fpm reload
+
+echo "DONE"

@@ -1,0 +1,80 @@
+#!/bin/bash
+
+# Current Dirs
+sed=`which sed`
+
+# Inputed Data
+inputed_user="$1"
+inputed_domain="$2"
+
+# Mysql Settings
+mysql="/usr/bin/mysql"
+mysql_user='root'
+mysql_user_pass='root'
+mysql_host='localhost'
+
+nginx_sitesenable_dir=/etc/nginx/sites-enabled
+
+# make sure we get at least 2 args, else die
+[[ $# -le 1 ]] && { echo "Usage: $0 <user> <domain>"; exit 1; }
+
+if [ "$inputed_domain" == "all" ]; then
+
+	/etc/init.d/nginx stop 
+	/etc/init.d/php5-fpm stop 
+	
+	count=$(who | grep ${inputed_user} | wc -l)
+	if [ ${count} -gt 0 ]; then
+	  echo "The user ${inputed_user} is logged."
+
+	  /etc/init.d/nginx start
+	  /etc/init.d/php5-fpm start 
+
+	  exit 0
+	fi
+
+	dirlist=$(ls -1 -d /home/$inputed_user/* | sed -e 's/\/home\/'$inputed_user'\///g' | sed -e 's/\///g')
+	for direc in $dirlist ; do
+
+		#echo $dirlist;
+		rm $nginx_sitesenable_dir/$direc.conf #2>/dev/null
+		
+		## Removes mysql database
+		#remove dots and dashes
+		db_name=`echo $inputed_domain | $sed 's/\.//g' | $sed 's/\-//g'` 
+		mysql_dropdb_query="${mysql} -u "${mysql_user}" -h "${mysql_host}" -p'${mysql_user_pass}' -e 'DROP DATABASE ${db_name};'" 	
+		eval $mysql_dropdb_query #2>/dev/null
+	done
+	
+	## Removes php-fpm user procsess
+	rm /etc/php5/fpm/pool.d/$inputed_user.conf #2>/dev/null
+	
+	## Removes mysql usr
+	mysql_dropuser_query="${mysql} -u "${mysql_user}" -h "${mysql_host}" -p'${mysql_user_pass}' -e 'DROP USER ${inputed_user}@localhost;'" 
+	eval $mysql_dropuser_query #2>/dev/null
+	
+	## Reload Services Config
+	/etc/init.d/nginx reload 
+	/etc/init.d/php5-fpm reload 
+	
+	## Removes user from system
+	cd /
+	userdel -r $inputed_user
+else
+	## remove domain folders
+	rm -rif /home/$inputed_user/$inputed_domain 2>/dev/null
+
+	## Removes nginx website config
+	rm $nginx_sitesenable_dir/$inputed_domain.conf 2>/dev/null 
+
+	## Removes mysql database
+	#remove dots and dashes
+	db_name=`echo $inputed_domain | $sed 's/\.//g' | $sed 's/\-//g'` 
+	mysql_dropdb_query="${mysql} -u "${mysql_user}" -h "${mysql_host}" -p'${mysql_user_pass}' -e 'DROP DATABASE ${db_name};'" 2>/dev/null
+	eval $mysql_dropdb_query	
+	
+	## Reload Services Config
+	/etc/init.d/nginx reload 
+	/etc/init.d/php5-fpm reload 
+fi
+echo "Done"

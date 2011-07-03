@@ -1,0 +1,43 @@
+Description:
+============
+nginx_vs is a set of scripts to instantly create and delete virtual server in nginx. They are meant to be used in a nginx configuration that uses php-fpm.
+
+nginxvscreate
+-------------
+nginxvscreate is script that will create a nginx virtual server with the necessary permissions to allow a normal user modify the site since the script will create a new php-fpm instance with permissions with for that user. The script requires a username, password and domain. Once it has all that parameters the script will:
+* create a linux/unix user with the specified password (if the user doesn't already exists)
+* create a mysql user with the specified password
+* create a mysql database with name generated from the domain (removing all special characters)  
+* create directories for the website and nginx log in the user directory.
+* create a nginx website config file
+* create a modified php-fpm config file wich will create a instance of php-fpm will run as specified user
+* restart nginx and php-fpm services 	
+	
+	
+# Installation 
+
+1. edit the nginxvscreate file and modify the variables on top to match your system (specially the mysql user, mysql password, phpfpm_pool_template and nginx_sitesenable_dir)
+2. copy nginxvscreate to nginxvscreate
+
+
+# Usage
+
+./nginxvscreate <user> <password> <domain>
+
+
+# Sources 
+* BASED ON: http://www.sebdangerfield.me.uk/2011/03/automatically-creating-new-virtual-hosts-with-nginx-bash-script/ 
+* VERY USEFULL INFO: http://themesforge.com/performance/configuring-nginx-php5-fpm-and-user-permissions/ 
+
+
+nginxvsdelete
+-------------
+nginxvscreate is script that will delete nginx virtual servers that were create by the nginxvscreate. The script requires a username domain. Once it has all that parameters the script will:
+* delete the the nginx and php-fpm config files
+* delete the mysql user and database of the site
+* delete the site folder matching the domain specified. if the domain inputed is the string "all" (whitout quotes) this will delete all site folders and the user.
+* restart nginx and php-fpm services 	
+
+# Usage
+
+./nginxvscreate <user> <domain>
