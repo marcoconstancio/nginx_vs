@@ -40,4 +40,4 @@ nginxvscreate is script that will delete nginx virtual servers that were create 
 
 # Usage
 
-./nginxvscreate <user> <domain>
+./nginxvsdelete <user> <domain>
